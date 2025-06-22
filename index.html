@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Destiny 2 Cheat Detector</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Is this player cheating?</h1>
+    <p>Click the link to review the player's stats on Trials Report, then cast your vote.</p>
+
+    <div id="loading">Loading next player...</div>
+
+    <div id="player-card" style="display:none;">
+        <h3>Review this player:</h3>
+        <a id="player-link-display" href="#" target="_blank" class="player-link">View on Trials Report</a>
+        
+        <div class="voting-booth">
+            <h3>Your Verdict:</h3>
+            <button id="vote-cheater" onclick="castVote('cheater')">🚨 Cheater</button>
+            <button id="vote-legit" onclick="castVote('legit')">😇 Legitimate</button>
+        </div>
+    </div>
+
+    <div id="results" style="display:none;">
+        <h3>Community Verdict:</h3>
+        <p id="confidence-level"></p>
+        <p id="vote-counts"></p>
+        <button onclick="loadRandomPlayer()">Next Player</button>
+    </div>
+
+    <div class="leaderboard-container">
+        <h2>Top Suspected Players</h2>
+        <p class="small-text">(Requires at least 50 total votes and >50% cheater votes)</p>
+        <ol id="top-cheaters-list">
+            <!-- This list will be populated by JavaScript -->
+            <li>Loading leaderboard...</li>
+        </ol>
+    </div>
+
+    <a href="submit.html" class="nav-link">Report a new player</a>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="app.js"></script>
+    <script>
+        // Load the first player and the leaderboard when the page loads
+        window.onload = () => {
+            loadRandomPlayer();
+            updateTopCheatersList();
+        };
+    </script>
+</body>
+</html>
