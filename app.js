@@ -169,7 +169,7 @@ async function updateTopCheatersList() {
             
             const cheaterPercentage = totalVotes > 0 ? (cheaterVotes / totalVotes) : 0;
             
-            return totalVotes >= 50 && cheaterPercentage > 0.5;
+            return totalVotes >= 25 && cheaterPercentage > 0.5;
         });
 
         // Also make the sort function defensive.
