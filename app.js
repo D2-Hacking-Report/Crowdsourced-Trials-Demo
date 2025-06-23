@@ -11,198 +11,264 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
 const db = firebase.firestore();
 
-// Global variable to hold the current player's data
-let currentPlayer = null;
+// --- Global State ---
+let currentPlayerId = null;
 
-// --- SUBMISSION LOGIC (for submit.html) ---
+// --- Core Application Logic ---
 
-async function submitLink() {
-    const linkInput = document.getElementById('trials-link-input');
-    const statusEl = document.getElementById('submit-status');
-    const trialsLink = linkInput.value.trim();
-
-    if (!trialsLink.startsWith("https://trials.report/report/")) {
-        statusEl.textContent = "Error: Please enter a valid Trials Report URL.";
-        return;
-    }
-
-    statusEl.textContent = "Submitting...";
-
-    try {
-        const urlParts = trialsLink.split('/');
-        if (urlParts.length < 5) throw new Error("Invalid URL format.");
-        
-        const uniqueId = `${urlParts[urlParts.length - 2]}-${urlParts[urlParts.length - 1]}`;
-
-        await db.collection('players').doc(uniqueId).set({
-            trialsLink: trialsLink,
-            votes_cheater: 0,
-            votes_legit: 0,
-            submitted_at: new Date()
-        }, { merge: true });
-
-        statusEl.textContent = `Success! The link has been added to the review queue.`;
-        linkInput.value = '';
-
-    } catch (error) {
-        statusEl.textContent = `Error: ${error.message}`;
-    }
-}
-
-// --- JUDGMENT LOGIC (for index.html) ---
-
+/**
+ * Loads a random player from Firestore for voting, excluding players
+ * who are overwhelmingly voted as "legitimate".
+ */
 async function loadRandomPlayer() {
-    document.getElementById('loading').style.display = 'block';
-    document.getElementById('player-card').style.display = 'none';
-    document.getElementById('results').style.display = 'none';
+    // Reset the UI to a loading state
+    const loadingDiv = document.getElementById('loading');
+    const playerCardDiv = document.getElementById('player-card');
+    const resultsDiv = document.getElementById('results');
+
+    if (loadingDiv) loadingDiv.style.display = 'block';
+    if (playerCardDiv) playerCardDiv.style.display = 'none';
+    if (resultsDiv) resultsDiv.style.display = 'none';
 
     try {
-        const snapshot = await db.collection('players').get();
+        const playersRef = db.collection('players');
+        const snapshot = await playersRef.get();
+
         if (snapshot.empty) {
-            document.getElementById('loading').textContent = "No players in the queue. Submit one!";
+            if (loadingDiv) loadingDiv.innerText = 'No players have been submitted yet.';
             return;
         }
 
-        const votedIDs = JSON.parse(localStorage.getItem('votedPlayerIDs') || '[]');
-        const availablePlayers = snapshot.docs.filter(doc => !votedIDs.includes(doc.id));
+        // Filter players to find ones eligible for voting
+        const votablePlayers = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const cheaterVotes = data.cheater_votes || 0;
+            const legitVotes = data.legit_votes || 0;
+            const totalVotes = cheaterVotes + legitVotes;
 
-        if (availablePlayers.length === 0) {
-            document.getElementById('loading').innerHTML = "Wow, you've voted on everyone!<br>Check back later for new submissions.";
+            // **NEW LOGIC**: A player is removed from the pool if they have:
+            // 1. More than 25 total votes AND
+            // 2. More than 80% of votes are "legit"
+            const isClearlyLegit = totalVotes > 25 && (legitVotes / totalVotes) > 0.8;
+
+            // If the player is NOT clearly legit, add them to the votable pool
+            if (!isClearlyLegit) {
+                votablePlayers.push({ id: doc.id, ...data });
+            }
+        });
+
+        if (votablePlayers.length === 0) {
+            if (loadingDiv) loadingDiv.innerText = 'All available players have been reviewed. Try submitting a new one!';
             return;
         }
 
-        const randomDoc = availablePlayers[Math.floor(Math.random() * availablePlayers.length)];
-        currentPlayer = { id: randomDoc.id, ...randomDoc.data() };
-        renderPlayerCard(currentPlayer);
+        // Select a random player from the filtered list
+        const randomIndex = Math.floor(Math.random() * votablePlayers.length);
+        const player = votablePlayers[randomIndex];
+        currentPlayerId = player.id;
+
+        // Populate the player card
+        const playerLinkEl = document.getElementById('player-link-display');
+        const playerDisplayName = player.bungieName.split('#')[0]; // Show name without the # numbers for brevity
+        playerLinkEl.href = `https://trials.report/report/${player.platform}/${player.bungieName}`;
+        playerLinkEl.textContent = `View ${playerDisplayName} on Trials Report`;
+
+        // Show the card and enable voting buttons
+        if (loadingDiv) loadingDiv.style.display = 'none';
+        if (playerCardDiv) playerCardDiv.style.display = 'block';
+        document.getElementById('vote-cheater').disabled = false;
+        document.getElementById('vote-legit').disabled = false;
 
     } catch (error) {
         console.error("Error loading random player:", error);
-        document.getElementById('loading').textContent = "Error loading player. Please refresh.";
+        if (loadingDiv) loadingDiv.innerText = 'Error loading player. Please try again.';
     }
 }
 
-function renderPlayerCard(playerData) {
-    const linkDisplay = document.getElementById('player-link-display');
-    linkDisplay.href = playerData.trialsLink;
-    
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('player-card').style.display = 'block';
-    document.getElementById('vote-cheater').disabled = false;
-    document.getElementById('vote-legit').disabled = false;
-    document.getElementById('results').style.display = 'none';
-}
-
+/**
+ * Casts a vote for the current player and stores it in Firestore.
+ * @param {string} voteType - Can be 'cheater' or 'legit'.
+ */
 async function castVote(voteType) {
-    const cheaterButton = document.getElementById('vote-cheater');
-    const legitButton = document.getElementById('vote-legit');
-    cheaterButton.disabled = true;
-    legitButton.disabled = true;
+    if (!currentPlayerId) return;
+
+    // Disable buttons to prevent multiple votes
+    document.getElementById('vote-cheater').disabled = true;
+    document.getElementById('vote-legit').disabled = true;
+
+    const playerRef = db.collection('players').doc(currentPlayerId);
+    const voteField = voteType === 'cheater' ? 'cheater_votes' : 'legit_votes';
 
     try {
-        const fieldToIncrement = `votes_${voteType}`;
-        const playerRef = db.collection('players').doc(currentPlayer.id);
-        
+        // Use a transaction to safely increment the vote count
         await playerRef.update({
-            [fieldToIncrement]: firebase.firestore.FieldValue.increment(1)
+            [voteField]: firebase.firestore.FieldValue.increment(1)
         });
-
-        const votedHistory = JSON.parse(localStorage.getItem('votedPlayerIDs') || '[]');
-        if (!votedHistory.includes(currentPlayer.id)) {
-            votedHistory.push(currentPlayer.id);
-        }
-        localStorage.setItem('votedPlayerIDs', JSON.stringify(votedHistory));
-
-        await showResults();
+        showResults();
+        updateTopCheatersList(); // Refresh leaderboard after a vote
 
     } catch (error) {
         console.error("Error casting vote:", error);
-        alert("Could not cast vote. Check console for details.");
-        cheaterButton.disabled = false;
-        legitButton.disabled = false;
+        alert("There was an error casting your vote. Please try again.");
+        // Re-enable buttons if the vote failed
+        document.getElementById('vote-cheater').disabled = false;
+        document.getElementById('vote-legit').disabled = false;
     }
 }
 
+/**
+ * Fetches the latest vote counts for the current player and displays them.
+ */
 async function showResults() {
-    try {
-        const updatedDoc = await db.collection('players').doc(currentPlayer.id).get();
-        const data = updatedDoc.data();
+    const playerRef = db.collection('players').doc(currentPlayerId);
+    const doc = await playerRef.get();
+    
+    if (!doc.exists) return;
 
-        const cheaterVotes = data.votes_cheater || 0;
-        const legitVotes = data.votes_legit || 0;
-        const totalVotes = cheaterVotes + legitVotes;
-        const confidence = totalVotes === 0 ? 0 : (cheaterVotes / totalVotes * 100);
+    const data = doc.data();
+    const cheaterVotes = data.cheater_votes || 0;
+    const legitVotes = data.legit_votes || 0;
+    const totalVotes = cheaterVotes + legitVotes;
 
-        document.getElementById('confidence-level').textContent = 
-            `Confidence Level: ${confidence.toFixed(1)}% believe this player is cheating.`;
-        document.getElementById('vote-counts').textContent = 
-            `Based on ${totalVotes} votes (${cheaterVotes} for cheater, ${legitVotes} for legit).`;
-
-        document.getElementById('results').style.display = 'block';
-
-        await updateTopCheatersList();
-
-    } catch (error) {
-        console.error("Error showing results:", error);
+    let confidenceText = "No votes have been cast yet.";
+    if (totalVotes > 0) {
+        const cheaterPercentage = Math.round((cheaterVotes / totalVotes) * 100);
+        if (cheaterPercentage >= 25) {
+            confidenceText = `Community considers this player a <strong>cheater</strong> with <strong>${cheaterPercentage}%</strong> confidence.`;
+        } else {
+            const legitPercentage = 100 - cheaterPercentage;
+            confidenceText = `Community considers this player <strong>legitimate</strong> with <strong>${legitPercentage}%</strong> confidence.`;
+        }
     }
+
+    document.getElementById('confidence-level').innerHTML = confidenceText;
+    document.getElementById('vote-counts').innerText = `(${cheaterVotes} cheater votes, ${legitVotes} legit votes)`;
+
+    document.getElementById('player-card').style.display = 'none';
+    document.getElementById('results').style.display = 'block';
 }
 
+/**
+ * Updates the leaderboard of top suspected cheaters.
+ */
 async function updateTopCheatersList() {
     const listElement = document.getElementById('top-cheaters-list');
+    if (!listElement) return; // Don't run on submit page
+    
     listElement.innerHTML = '<li>Loading leaderboard...</li>';
 
     try {
+        // This query fetches all documents to be filtered client-side.
+        // For larger datasets, a more advanced solution with Cloud Functions might be needed.
         const snapshot = await db.collection('players').get();
-        const players = [];
+
+        let suspectedPlayers = [];
         snapshot.forEach(doc => {
-            players.push({ id: doc.id, ...doc.data() });
-        });
-
-        const candidates = players.filter(p => {
-            // This defensive code prevents crashes from malformed data.
-            // It provides a default value of 0 if a field is missing.
-            const cheaterVotes = p.votes_cheater || 0;
-            const legitVotes = p.votes_legit || 0;
+            const data = doc.data();
+            const cheaterVotes = data.cheater_votes || 0;
+            const legitVotes = data.legit_votes || 0;
             const totalVotes = cheaterVotes + legitVotes;
-            
-            const cheaterPercentage = totalVotes > 0 ? (cheaterVotes / totalVotes) : 0;
-            
-            return totalVotes >= 25 && cheaterPercentage > 0.5;
+
+            if (totalVotes >= 25) {
+                const cheaterPercentage = cheaterVotes / totalVotes;
+                if (cheaterPercentage > 0.5) {
+                    suspectedPlayers.push({
+                        ...data,
+                        totalVotes: totalVotes,
+                        cheaterPercentage: cheaterPercentage
+                    });
+                }
+            }
         });
 
-        // Also make the sort function defensive.
-        candidates.sort((a, b) => (b.votes_cheater || 0) - (a.votes_cheater || 0));
-
-        const topPlayers = candidates.slice(0, 10);
-
-        // This line will now be reached because the function won't crash.
-        listElement.innerHTML = '';
+        // Sort by cheater percentage (descending)
+        suspectedPlayers.sort((a, b) => b.cheaterPercentage - a.cheaterPercentage);
+        const topPlayers = suspectedPlayers.slice(0, 10);
 
         if (topPlayers.length === 0) {
-            listElement.innerHTML = '<li>No players currently meet the criteria.</li>';
-        } else {
-            topPlayers.forEach(player => {
-                // Use the same defensive variables for rendering.
-                const cheaterVotes = player.votes_cheater || 0;
-                const legitVotes = player.votes_legit || 0;
-                const totalVotes = cheaterVotes + legitVotes;
-                const confidence = (cheaterVotes / totalVotes * 100).toFixed(1);
-
-                const listItem = document.createElement('li');
-                listItem.innerHTML = `
-                    <a href="${player.trialsLink}" target="_blank">View on Trials Report</a>
-                    <span class="vote-details">
-                        ${cheaterVotes} Cheater Votes (${confidence}%) out of ${totalVotes} total.
-                    </span>
-                `;
-                listElement.appendChild(listItem);
-            });
+            listElement.innerHTML = '<li>No players currently meet the leaderboard criteria.</li>';
+            return;
         }
+
+        listElement.innerHTML = ''; // Clear loading message
+        topPlayers.forEach(player => {
+            const playerLink = `https://trials.report/report/${player.platform}/${player.bungieName}`;
+            const percentage = Math.round(player.cheaterPercentage * 100);
+            const listItem = document.createElement('li');
+            listItem.innerHTML = `
+                <a href="${playerLink}" target="_blank">${player.bungieName}</a>
+                <span class="vote-details">${percentage}% cheater votes (${player.totalVotes} total votes)</span>
+            `;
+            listElement.appendChild(listItem);
+        });
+
     } catch (error) {
-        // This catch block will report any other unexpected errors.
-        console.error("Failed to update top cheaters list:", error);
-        listElement.innerHTML = '<li>Error loading leaderboard. Please check the console.</li>';
+        console.error("Error updating leaderboard:", error);
+        listElement.innerHTML = '<li>Error loading leaderboard.</li>';
+    }
+}
+
+/**
+ * Submits a new player link from the submit.html page.
+ */
+async function submitLink() {
+    const inputElement = document.getElementById('trials-link-input');
+    const statusElement = document.getElementById('submit-status');
+    const url = inputElement.value.trim();
+
+    if (!url) {
+        statusElement.textContent = "Please enter a URL.";
+        statusElement.style.color = '#ff453a'; // red
+        return;
+    }
+
+    // Regex to parse Trials Report URL: https://trials.report/report/{platformId}/{bungieName}
+    const match = url.match(/trials\.report\/report\/(\d+)\/(.+)/);
+    if (!match || match.length < 3) {
+        statusElement.textContent = "Invalid Trials Report URL format.";
+        statusElement.style.color = '#ff453a';
+        return;
+    }
+
+    const platform = match[1];
+    const bungieName = decodeURIComponent(match[2]); // Decode URL-encoded characters like %23 for #
+
+    statusElement.textContent = "Submitting...";
+    statusElement.style.color = '#f2f2f7';
+
+    try {
+        // Use a consistent ID to prevent duplicate entries
+        const docId = `${platform}-${bungieName.replace('#', '-')}`;
+        const playerRef = db.collection('players').doc(docId);
+
+        const doc = await playerRef.get();
+        if (doc.exists) {
+            statusElement.textContent = "This player has already been submitted.";
+            statusElement.style.color = '#ffd60a'; // yellow
+            return;
+        }
+
+        await playerRef.set({
+            bungieName: bungieName,
+            platform: platform,
+            cheater_votes: 0,
+            legit_votes: 0,
+            submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        statusElement.textContent = "Success! Player submitted for review.";
+        statusElement.style.color = '#32d74b'; // green
+        inputElement.value = '';
+
+    } catch (error) {
+        console.error("Error submitting link:", error);
+        statusElement.textContent = "An error occurred. Please try again.";
+        statusElement.style.color = '#ff453a';
     }
 }
