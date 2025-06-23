@@ -1,3 +1,5 @@
+
+
 /* General Body & Theme */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -53,8 +55,8 @@ input[type="text"] {
     margin-bottom: 15px;
 }
 
-/* Page-specific elements */
-#player-card, #results, .leaderboard-container {
+/* Page-specific elements & Containers */
+#player-card, #results, .leaderboard-container, #history-container {
     margin-top: 30px;
     padding: 20px;
     border: 1px solid #3a3a3c;
@@ -83,23 +85,25 @@ input[type="text"] {
     font-size: 1.1em;
 }
 
-/* Leaderboard Styles */
+/* Leaderboard & History List Styles */
 .leaderboard-container {
     margin-top: 40px;
 }
 
-#top-cheaters-list {
+#top-cheaters-list, .history-list {
     padding-left: 20px;
     list-style-type: decimal;
 }
 
-#top-cheaters-list li {
+/* Style for individual list items on both pages */
+#top-cheaters-list li, .history-item {
     margin-bottom: 12px;
     padding-bottom: 12px;
     border-bottom: 1px solid #3a3a3e;
 }
 
-#top-cheaters-list li:last-child {
+/* Remove border from the last item in any list */
+#top-cheaters-list li:last-child, .history-item:last-child {
     border-bottom: none;
     margin-bottom: 0;
     padding-bottom: 0;
@@ -117,4 +121,22 @@ input[type="text"] {
     color: #bbb;
     display: block; /* Puts the details on a new line */
     margin-top: 4px;
+}
+
+/* History Page Specific Styles (designed to match the original theme) */
+.history-list {
+    list-style-type: none; /* History doesn't need numbers like the leaderboard */
+    padding-left: 0;
+}
+
+.history-item-name {
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.my-vote {
+    font-size: 0.9em;
+    display: block;
+    margin-top: 4px;
+    font-weight: bold;
 }

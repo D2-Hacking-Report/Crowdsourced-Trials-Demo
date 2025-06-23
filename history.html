@@ -1,18 +1,19 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Report a Player</title>
+    <title>My Vote History</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Submit a Trials Report Link</h1>
-    <p>Paste the full Trials Report URL for a player you want the community to review.</p>
-    
-    <input type="text" id="trials-link-input" placeholder="Paste full URL: https://trials.report/report/...">
-    <button onclick="submitLink()">Submit for Review</button>
-    <p id="submit-status"></p>
+    <h1>My Vote History</h1>
+    <p>Here are all the players you have voted on.</p>
+
+    <div id="history-container" class="leaderboard-container">
+        <p>Loading your vote history...</p>
+    </div>
 
     <a href="index.html" class="nav-link">Back to Judging</a>
 

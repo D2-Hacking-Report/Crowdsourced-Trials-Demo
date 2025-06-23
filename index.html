@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -39,17 +40,11 @@
     </div>
 
     <a href="submit.html" class="nav-link">Report a new player</a>
+    <a href="history.html" class="nav-link">My Vote History</a>
 
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
     <script src="app.js"></script>
-    <script>
-        // Load the first player and the leaderboard when the page loads
-        window.onload = () => {
-            loadRandomPlayer();
-            updateTopCheatersList();
-        };
-    </script>
 </body>
 </html>
